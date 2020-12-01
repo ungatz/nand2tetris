@@ -1,0 +1,85 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/05/CPU.hdl
+
+/**
+ * The Hack CPU (Central Processing unit), consisting of an ALU,
+ * two registers named A and D, and a program counter named PC.
+ * The CPU is designed to fetch and execute instructions written in 
+ * the Hack machine language. In particular, functions as follows:
+ * Executes the inputted instruction according to the Hack machine 
+ * language specification. The D and A in the language specification
+ * refer to CPU-resident registers, while M refers to the external
+ * memory location addressed by A, i.e. to Memory[A]. The inM input 
+ * holds the value of this location. If the current instruction needs 
+ * to write a value to M, the value is placed in outM, the address 
+ * of the target location is placed in the addressM output, and the 
+ * writeM control bit is asserted. (When writeM==0, any value may 
+ * appear in outM). The outM and writeM outputs are combinational: 
+ * they are affected instantaneously by the execution of the current 
+ * instruction. The addressM and pc outputs are clocked: although they 
+ * are affected by the execution of the current instruction, they commit 
+ * to their new values only in the next time step. If reset==1 then the 
+ * CPU jumps to address 0 (i.e. pc is set to 0 in next time step) rather 
+ * than to the address resulting from executing the current instruction. 
+ */
+
+CHIP CPU {
+
+    IN  inM[16],         // M value input  (M = contents of RAM[A])
+        instruction[16], // Instruction for execution
+        reset;           // Signals whether to re-start the current
+                         // program (reset==1) or continue executing
+                         // the current program (reset==0).
+
+    OUT outM[16],        // M value output
+        writeM,          // Write to M? 
+        addressM[15],    // Address in data memory (of M)
+        pc[15];          // address of next instruction
+
+    PARTS:
+    
+//A hai instruction ya B hai opcode ke hisab se dekhi
+	Not(in=instruction[15],out=isA);
+	Not(in=isA,out=isC);
+//ab agar c hai to isko A me dalo
+	And(a=isC,b=instruction[5],out=isLoadAluOut);
+	Mux16(a=instruction,b=outALU,sel=isLoadAluOut,out=inAR);
+//A ka load nikal ne ke liye phir data bit se check karo ki kaha store krna hai
+	Or(a=isA,b=instruction[5],out=isloadA);
+	ARegister(in=inAR,load=isloadA,out=outA,out[0..14]=addressM);
+//ab bhai ALU me inM dalna hai ki AR ka output dalna hai a-bit se check karo
+	Mux16(a=outA,b=inM,sel=instruction[12],out=inALU);
+//agar ab C command thi aur specified tha ki M me write krna hai to phir 
+	And(a=isC,b=instruction[3],out=writeM);
+//if C and it is specified to write to DR
+	And(a=instruction[4],b=isC,out=isLoadDR);
+	DRegister(in=outALU,load=isLoadDR,out=outD);
+//ab computation bits ke hisab se ALU ke control bits specify karo
+	And(a = isC, b = instruction[6], out = no);
+	And(a = isC, b = instruction[7], out = f);
+	And(a = isC, b = instruction[8], out = ny);
+   	And(a = isC, b = instruction[9], out = zy);
+    	And(a = isC, b = instruction[10], out = nx);
+    	And(a = isC, b = instruction[11], out = zx);
+//ALU:
+ALU(x=outD,y=inALU,zx = zx, nx = nx, zy = zy, ny = ny, f = f, no = no, out = outALU, out = outM, zr = zr, ng = ng);
+//now logic for jump
+    	And(a = isC, b = instruction[0], out = isGT);
+    	And(a = isC, b = instruction[1], out = isEQ);
+    	And(a = isC, b = instruction[2], out = isLT);
+//less than 0 greater than 0 ye sab ALU ke do 1 bit outputs se determaine karo
+	And(a=ng,b=isLT,out=isLtJump);  //less than 0
+	And(a=zr,b=isEQ,out=isEqJump);  //equal to 0
+	Not(in=ng,out=notNg);
+	Not(in=zr,out=notZr);
+	And(a=notNg,b=notZr,out=isOutGt);
+	And(a=isOutGt,b=isGT,out=isGtJump);
+    	Or(a = isLtJump, b = isEqJump, out = isJump); // to phir ab jump krna hai ki nahi
+    	Or(a = isJump, b = isGtJump, out = jump);     //if anyone of jump output is true then yes
+//program Counter
+	PC(in=outA,load=jump,inc=true,reset=reset,out[0..14]=pc);
+
+	
+}
